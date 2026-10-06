@@ -26,3 +26,17 @@ CREATE TABLE IF NOT EXISTS emergency_contacts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_contacts_band ON emergency_contacts(band_id);
+
+CREATE TABLE IF NOT EXISTS vault_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  band_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  document_number TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (band_id) REFERENCES bands(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_items_band ON vault_items(band_id);
