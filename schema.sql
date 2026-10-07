@@ -40,3 +40,17 @@ CREATE TABLE IF NOT EXISTS vault_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_items_band ON vault_items(band_id);
+
+CREATE TABLE IF NOT EXISTS vault_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  band_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Personal Data',
+  mime_type TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  file_data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (band_id) REFERENCES bands(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_files_band ON vault_files(band_id);
