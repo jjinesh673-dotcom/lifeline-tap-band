@@ -31,7 +31,7 @@ async function handleApi(request, env, url) {
     const activationCode = String(body.activationCode || "").trim();
     const ownerName = String(body.ownerName || "").trim();
     const pin = String(body.pin || "");
-    if (!id || !activationCode || !ownerName || !/^\d{6,}$/.test(pin)) return json({ error: "Band ID, activation code, name and a 6+ digit PIN are required." }, 400);
+    if (!id || !activationCode || !ownerName || !/^\d{6,}$/.test(pin)) return json({ error: "Band confirmation, activation code, name and a 6+ digit PIN are required." }, 400);
     const band = await getBand(env, id);
     if (!band) return json({ error: "Band not found." }, 404);
     if (band.activated) return json({ error: "This band is already activated." }, 409);
@@ -45,7 +45,7 @@ async function handleApi(request, env, url) {
     for (const c of Array.isArray(body.contacts) ? body.contacts.slice(0, 5) : []) {
       if (c.name && c.phone) await env.DB.prepare("INSERT INTO emergency_contacts (band_id,name,relationship,phone) VALUES (?,?,?,?)").bind(id, String(c.name), String(c.relationship || ""), String(c.phone)).run();
     }
-    return json({ ok: true });
+    return json({ ok: true, permanentUrl: `${url.origin}/b/${encodeURIComponent(id)}` });
   }
 
   if (request.method === "POST" && url.pathname === "/api/vault/unlock") {
@@ -56,7 +56,8 @@ async function handleApi(request, env, url) {
     const pinHash = await hashText(String(body.pin || ""));
     if (!band.vault_pin_hash || pinHash !== band.vault_pin_hash) return json({ error: "Incorrect PIN." }, 403);
     const docs = await env.DB.prepare("SELECT id,category,title,document_number,notes,created_at,updated_at FROM vault_items WHERE band_id = ? ORDER BY category,title").bind(band.id).all();
-    return json({ ok: true, documents: docs.results || [] });
+    const files = await env.DB.prepare("SELECT id,title,category,mime_type,file_size,created_at FROM vault_files WHERE band_id = ? ORDER BY created_at DESC").bind(band.id).all();
+    return json({ ok: true, documents: docs.results || [], files: files.results || [] });
   }
 
   if (request.method === "POST" && url.pathname === "/api/vault/item") {
@@ -72,6 +73,41 @@ async function handleApi(request, env, url) {
     await env.DB.prepare("INSERT INTO vault_items (band_id,category,title,document_number,notes) VALUES (?,?,?,?,?)")
       .bind(band.id, category, title, String(body.documentNumber || "").trim().slice(0, 120), String(body.notes || "").trim().slice(0, 1000)).run();
     return json({ ok: true });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/vault/file") {
+    if (!env.DB) return json({ error: "D1 is not connected yet." }, 503);
+    const body = await request.json();
+    const band = await getBand(env, String(body.bandId || ""));
+    if (!band || !band.activated) return json({ error: "Band is not activated." }, 404);
+    const pinHash = await hashText(String(body.pin || ""));
+    if (!band.vault_pin_hash || pinHash !== band.vault_pin_hash) return json({ error: "Incorrect PIN." }, 403);
+    const title = String(body.title || "File").trim().slice(0, 120);
+    const category = String(body.category || "Personal Data").trim().slice(0, 80);
+    const mimeType = String(body.mimeType || "application/octet-stream").slice(0, 120);
+    const fileData = String(body.fileData || "");
+    const fileSize = Number(body.fileSize || 0);
+    if (!fileData || !fileSize) return json({ error: "File data is required." }, 400);
+    if (fileSize > 300000) return json({ error: "Prototype upload limit is 300 KB per file." }, 413);
+    if (fileData.length > 450000) return json({ error: "This file is too large for the prototype storage layer." }, 413);
+    await env.DB.prepare("INSERT INTO vault_files (band_id,title,category,mime_type,file_size,file_data) VALUES (?,?,?,?,?,?)")
+      .bind(band.id, title, category, mimeType, fileSize, fileData).run();
+    return json({ ok: true });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/vault/file") {
+    if (!env.DB) return json({ error: "D1 is not connected yet." }, 503);
+    const id = url.searchParams.get("id");
+    const pin = url.searchParams.get("pin") || "";
+    if (!id || !pin) return json({ error: "Missing file id or PIN." }, 400);
+    const file = await env.DB.prepare("SELECT * FROM vault_files WHERE id = ?").bind(id).first();
+    if (!file) return json({ error: "File not found." }, 404);
+    const band = await getBand(env, file.band_id);
+    if (!band || !band.activated) return json({ error: "Band is not activated." }, 404);
+    const pinHash = await hashText(pin);
+    if (!band.vault_pin_hash || pinHash !== band.vault_pin_hash) return json({ error: "Incorrect PIN." }, 403);
+    const bytes = Uint8Array.from(atob(file.file_data), c => c.charCodeAt(0));
+    return new Response(bytes, { headers: { "content-type": file.mime_type, "content-disposition": `inline; filename="${encodeURIComponent(file.title)}"`, "cache-control": "no-store" } });
   }
 
   return json({ error: "Not found" }, 404);
