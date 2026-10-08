@@ -121,6 +121,15 @@ export default {
       catch (e) { return json({ error: "Server error", detail: e?.message || "Unknown error" }, 500); }
     }
     if (url.pathname === "/health") return json({ ok: true, service: "lifeline-tap-band" });
+
+    // Cloudflare Assets serves files by exact path. Our frontend is a single-page
+    // app, so /a/<bandId> and /b/<bandId> must both serve public/index.html.
+    // The browser-side app then reads the pathname and loads the correct band.
+    if (url.pathname.startsWith("/a/") || url.pathname.startsWith("/b/")) {
+      const indexUrl = new URL("/", request.url);
+      return env.ASSETS.fetch(new Request(indexUrl, request));
+    }
+
     return env.ASSETS.fetch(request);
   }
 };
